@@ -4,22 +4,23 @@ import os
 file_path = "data/market_data.csv.csv"
 
 print("==================================================")
-print(" RUNNING DATASET EXPLORATION")
+print("🔍 SYSTEM CHECK: EXTRACTING ALL DATASET COLUMNS")
 print("==================================================")
 
 if not os.path.exists(file_path):
-    print(f" Error: Cannot find the dataset file at {file_path}")
+    print(f"❌ Error: Cannot find the dataset file at: {file_path}")
 else:
-    # Read just the first few rows to inspect the structure safely
-    print(" Loading dataset structure...")
-    df = pd.read_head = pd.read_csv(file_path, nrows=5)
+    print("⏳ Reading dataset structure from E: Drive...\n")
+    # Read just the header row to make it super fast
+    df = pd.read_csv(file_path, nrows=1)
     
-    print("\n SUCCESS: Dataset found!")
-    print(f" Total Columns found: {len(df.columns)}")
+    print(f"✅ Success! Total Columns Found: {len(df.columns)}")
     print("--------------------------------------------------")
-    print("COLUMN NAMES:")
-    print(", ".join(df.columns))
+    print("📊 VERTICAL COLUMN LIST:")
     print("--------------------------------------------------")
-    print(" FIRST 2 ROWS OF DATA:")
-    print(df.head(2))
+    
+    # Loop through columns and print them vertically with numbers
+    for index, column_name in enumerate(df.columns, start=1):
+        print(f"{index}. {column_name}")
+        
 print("==================================================")
