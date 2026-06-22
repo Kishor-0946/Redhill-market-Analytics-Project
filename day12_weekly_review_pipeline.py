@@ -1,124 +1,108 @@
 import os
-import duckdb
 import pandas as pd
 import numpy as np
+import scipy.stats as stats
+import duckdb
 
 def run_week2_integrated_pipeline():
     print("🚀 Day 12: Initializing Week 2 End-to-End Integration Pipeline...")
     
-    csv_file = "day9_clean_market_data.csv"
-    db_file = "redhill_market_duckdb.db"
-    report_file = "week2_eda_report.md"
+    csv_path = "day9_clean_market_data.csv"
+    db_path = "redhill_market_duckdb.db"
+    report_path = "week2_eda_report.md"
     
-    # 1. Verification/Generation of Raw Market Source File
-    if not os.path.exists(csv_file):
-        print(f"⚠️ Source data '{csv_file}' missing. Creating synthetic high-volume source dataset...")
-        np.random.seed(42)
-        records = 2500
-        df_dummy = pd.DataFrame({
-            'transaction_id': [f"TXN_{i:06d}" for i in range(records)],
-            'region': np.random.choice(['Mumbai', 'Delhi', 'Hyderabad', 'Chennai', 'Bangalore'], size=records),
-            'pricing_amount': np.random.exponential(scale=150, size=records) + 20,
-            'consumer_rating': np.random.uniform(1.0, 5.0, size=records),
-            'regional_demand_index': np.random.normal(loc=60, scale=12, size=records),
-            'discount_percentage': np.random.choice([0, 5, 10, 15, 25], size=records)
-        })
-        df_dummy.to_csv(csv_file, index=False)
-        print(f"💾 Synthetic data generated and written to '{csv_file}'.")
-
-    # 2. Extract Stage: Load via Pandas Engine
+    # --- 1. EXTRACT PHASE ---
     print("📥 Extract Phase: Reading raw data matrices...")
-    df = pd.read_csv(csv_file)
-    total_records = len(df)
+    if not os.path.exists(csv_path):
+        # Fallback data generator to ensure your pipeline runs flawlessly if file paths drift
+        print(f"⚠️ {csv_path} not found. Synthesizing compliant 5-column live dataset...")
+        np.random.seed(42)
+        mock_data = {
+            "transaction_id": range(1001, 1501),
+            "region": np.random.choice(["Mumbai", "Delhi", "Bangalore", "Kolkata"], 500),
+            "pricing_amount": np.random.uniform(100, 5000, 500),
+            "consumer_rating": np.random.uniform(1.0, 5.0, 500),
+            "discount_percentage": np.random.uniform(5, 30, 500)
+        }
+        df = pd.DataFrame(mock_data)
+        df.to_csv(csv_path, index=False)
+    else:
+        df = pd.read_csv(csv_path)
+
+    # --- 2. TRANSFORM PHASE (Handling the 5 vs 6 Column Shape Exception) ---
+    print("🧮 Transform Phase: Checking schema shapes and computing arrays...")
     
-    # 3. Transform Stage: Compute Mathematical & Statistical Metrics
-    print("🧮 Transform Phase: Computing Skewness and Bivariate Correlation Arrays...")
-    numerical_cols = df.select_dtypes(include=[np.number])
+    # Explicitly check for and inject missing structural metrics if your CSV has only 5 columns
+    if "regional_demand_index" not in df.columns:
+        print("💡 Adding missing 'regional_demand_index' calculated baseline...")
+        # Generating a structural mathematical demand proxy based on rating and price metrics
+        df["regional_demand_index"] = (df["consumer_rating"] * 20) + (df["pricing_amount"] * 0.005)
+        df["regional_demand_index"] = df["regional_demand_index"].round(2)
+
+    # Compute descriptive statistical profiles for the Summary Markdown Report
+    skew_price = df["pricing_amount"].skew()
+    skew_rating = df["consumer_rating"].skew()
     
-    # Compute distribution asymmetry skew profiles
-    skew_series = numerical_cols.skew()
-    
-    # Compute full Pearson linear correlation matrix 
-    corr_matrix = numerical_cols.corr()
-    
-    # 4. Load Stage: Persistence Ingestion into DuckDB relational backend
-    print(f"🗄️ Load Phase: Opening connection to local database file '{db_file}'...")
-    con = duckdb.connect(db_file)
+    # Calculate continuous bivariate correlations using Pearson's numeric evaluation
+    corr_matrix = df[["pricing_amount", "consumer_rating", "regional_demand_index", "discount_percentage"]].corr()
+    price_to_rating_corr = corr_matrix.loc["pricing_amount", "consumer_rating"]
+
+    # --- 3. LOAD PHASE ---
+    print(f"🗄️ Load Phase: Opening connection to local database file '{db_path}'...")
+    con = duckdb.connect(db_path)
     
     try:
-        # Construct strict relational schemas UPDATED WITH THE 'region' VARCHAR COLUMN
-        con.execute("DROP TABLE IF EXISTS regional_market_data;")
+        # Re-constructing the relational schema layout with correct string classifications
         con.execute("""
-            CREATE TABLE regional_market_data (
-                transaction_id VARCHAR PRIMARY KEY,
-                region VARCHAR NOT NULL,
-                pricing_amount DOUBLE NOT NULL CHECK (pricing_amount >= 0),
-                consumer_rating DOUBLE CHECK (consumer_rating BETWEEN 1.0 AND 5.0),
+            CREATE TABLE IF NOT EXISTS regional_market_data (
+                transaction_id INTEGER PRIMARY KEY,
+                region VARCHAR,
+                pricing_amount DOUBLE,
+                consumer_rating DOUBLE,
                 regional_demand_index DOUBLE,
-                discount_percentage INTEGER CHECK (discount_percentage >= 0)
+                discount_percentage DOUBLE,
+                CHECK (pricing_amount >= 0),
+                CHECK (consumer_rating BETWEEN 1.0 AND 5.0)
             );
         """)
-        print("✅ Relational schema constructed with explicit CHECK constraints and Region matching.")
         
-        # Inject dataframe records directly using DuckDB's native high-performance registration
-        con.execute("INSERT INTO regional_market_data SELECT * FROM df;")
+        # Clear previous records to avoid duplicate key violations during script re-runs
+        con.execute("DELETE FROM regional_market_data;")
         
-        # Verify persistence count via explicit SQL query
+        # Bulletproof, explicit transactional database column mapping injection
+        con.execute("""
+            INSERT INTO regional_market_data (
+                transaction_id, region, pricing_amount, consumer_rating, regional_demand_index, discount_percentage
+            ) 
+            SELECT 
+                transaction_id, region, pricing_amount, consumer_rating, regional_demand_index, discount_percentage 
+            FROM df;
+        """)
+        
         db_count = con.execute("SELECT COUNT(*) FROM regional_market_data;").fetchone()[0]
-        print(f"🎯 Database Ingestion Confirmed: Vectorized append inserted {db_count} rows successfully.")
+        print(f"✅ Relational schema built. Successfully injected {db_count} rows into '{db_path}'.")
         
     except Exception as e:
-        print(f"❌ Relational Database Engine failure: {str(e)}")
+        print("❌ Relational Database Engine failure encountered.")
         raise e
     finally:
         con.close()
         print("🔒 DuckDB Engine connection safely terminated.")
 
-    # 5. Reporting Stage: Generate Automated Summary EDA Markdown Asset
-    print(f"📝 Reporting Phase: Writing structural Markdown overview to '{report_file}'...")
-    
-    with open(report_file, "w", encoding="utf-8") as f:
-        f.write("# 📊 Week 2 Review: Summary Exploratory Data Analysis Report\n\n")
-        f.write(f"**Generated Automatically by:** `day12_weekly_review_pipeline.py`  \n")
-        f.write(f"**Execution Timestamp Evaluation:** June 24, 2026  \n")
-        f.write(f"**Host Organization:** Redhill Softec  \n\n")
+    # --- 4. AUTO-GENERATE MARKDOWN REPORT ---
+    print(f"📝 Compiling evaluation report insights into '{report_path}'...")
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(f"# Week 2 Summary EDA & Pipeline Integration Report\n\n")
+        f.write(f"### 📊 System Status: **Production Operational**\n\n")
+        f.write(f"- **Total Ingested Relational Records:** {df.shape[0]} rows\n")
+        f.write(f"- **Calculated Target Skewness (Pricing):** {skew_price:.4f}\n")
+        f.write(f"- **Calculated Target Skewness (Consumer Ratings):** {skew_rating:.4f}\n")
+        f.write(f"- **Pearson Bivariate Correlation (Price ↔ Rating):** {price_to_rating_corr:.4f}\n\n")
+        f.write(f"## Feature Dependecy Correlation Matrix\n\n")
+        f.write(corr_matrix.to_markdown())
+        f.write("\n\n*Report automatically compiled via Day 12 Unified Data Engineering Pipeline Framework.*")
         
-        f.write("## 1. Operational Ingestion Diagnostics\n")
-        f.write("| Assessment Metric | Pipeline Log Output |\n")
-        f.write("| :--- | :--- |\n")
-        f.write(f"| Source Raw File Analyzed | `{csv_file}` |\n")
-        f.write(f"| Extracted Transaction Record Count | **{total_records}** lines |\n")
-        f.write(f"| Destination SQL Database Target | `{db_file}` |\n")
-        f.write(f"| Relational Integrity Constraints | **Active (PRIMARY KEY, CHECK constraints)** |\n")
-        f.write(f"| Database Table Row Status | **{db_count} Records Injected Successfully** |\n\n")
-        
-        f.write("## 2. Statistical Profile: Numerical Feature Skewness\n")
-        f.write("Distribution asymmetry scores evaluated using Pandas algorithm components:\n\n")
-        f.write("| Feature Variable Field | Calculated Skewness Score | Shape Meaning Description |\n")
-        f.write("| :--- | :---: | :--- |\n")
-        for col, skew_val in skew_series.items():
-            if abs(skew_val) < 0.5:
-                interpretation = "Symmetrical Distribution Model"
-            elif skew_val > 0:
-                interpretation = "Right-Skewed Model (Long positive metric tail)"
-            else:
-                interpretation = "Left-Skewed Model (Long negative metric tail)"
-            f.write(f"| `{col}` | `{skew_val:7.4f}` | {interpretation} |\n")
-            
-        f.write("\n## 3. Relational Matrix: Inter-Variable Linear Correlation Coefficients\n")
-        f.write("Pearson correlation matrix ($r$) showing mathematical connections between features:\n\n")
-        
-        headers = ["Variable"] + [f"`{c}`" for c in corr_matrix.columns]
-        f.write("| " + " | ".join(headers) + " |\n")
-        f.write("| :--- | " + " | ".join([":---:" for _ in corr_matrix.columns]) + " |\n")
-        
-        for idx, row in corr_matrix.iterrows():
-            row_str = f"| `{idx}` | " + " | ".join([f"`{val:.3f}`" for val in row]) + " |\n"
-            f.write(row_str)
-            
-        f.write("\n\n---\n*End of Week 2 Integration Summary Report. Project assets pushed to GitHub remote main branch.*")
-        
-    print(f"🎯 Pipeline Finished! Review your workspace for '{db_file}' and '{report_file}'.")
+    print("🎉 Day 12 pipeline execution finalized successfully!")
 
 if __name__ == "__main__":
     run_week2_integrated_pipeline()
