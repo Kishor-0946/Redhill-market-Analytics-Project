@@ -1,0 +1,30 @@
+                            OLS Regression Results                            
+==============================================================================
+Dep. Variable:         pricing_amount   R-squared:                       0.002
+Model:                            OLS   Adj. R-squared:                  0.000
+Method:                 Least Squares   F-statistic:                     1.040
+Date:                Wed, 24 Jun 2026   Prob (F-statistic):              0.397
+Time:                        11:40:20   Log-Likelihood:                -16001.
+No. Observations:                2500   AIC:                         3.202e+04
+Df Residuals:                    2493   BIC:                         3.206e+04
+Df Model:                           6                                         
+Covariance Type:            nonrobust                                         
+=========================================================================================
+                            coef    std err          t      P>|t|      [0.025      0.975]
+-----------------------------------------------------------------------------------------
+const                   179.8778     16.101     11.172      0.000     148.306     211.450
+discount_percentage      -0.6558      0.341     -1.925      0.054      -1.324       0.012
+regional_demand_index     0.0224      0.235      0.095      0.924      -0.438       0.483
+region_Chennai          -13.3131      9.118     -1.460      0.144     -31.194       4.567
+region_Delhi             -6.5338      9.158     -0.713      0.476     -24.491      11.423
+region_Hyderabad         -6.2030      9.304     -0.667      0.505     -24.447      12.041
+region_Mumbai           -10.8791      9.122     -1.193      0.233     -28.767       7.009
+==============================================================================
+Omnibus:                      981.642   Durbin-Watson:                   1.998
+Prob(Omnibus):                  0.000   Jarque-Bera (JB):             4051.240
+Skew:                           1.904   Prob(JB):                         0.00
+Kurtosis:                       7.939   Cond. No.                         384.
+==============================================================================
+
+Notes:
+[1] Standard Errors assume that the covariance matrix of the errors is correctly specified.
